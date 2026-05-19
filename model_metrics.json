@@ -1,0 +1,140 @@
+{
+    "accuracy": 0.9333333333333333,
+    "per_class_metrics": {
+        "Accessibilit\u00e0/barriere architettoniche/mobilit\u00e0 e trasporti/barriere digitali e media": {
+            "precision": 1.0,
+            "recall": 0.9,
+            "f1": 0.9473684210526315,
+            "support": 60
+        },
+        "Altro": {
+            "precision": 0.8787878787878788,
+            "recall": 0.9666666666666667,
+            "f1": 0.9206349206349206,
+            "support": 60
+        },
+        "Inclusione lavorativa": {
+            "precision": 0.9322033898305084,
+            "recall": 0.9166666666666666,
+            "f1": 0.9243697478991597,
+            "support": 60
+        },
+        "Istruzione/formazione/inclusione scolastica": {
+            "precision": 0.8108108108108109,
+            "recall": 1.0,
+            "f1": 0.8955223880597015,
+            "support": 60
+        },
+        "Rapporti con datori di lavoro": {
+            "precision": 1.0,
+            "recall": 0.9666666666666667,
+            "f1": 0.9830508474576272,
+            "support": 60
+        },
+        "Salute/sanit\u00e0/progetto di vita/assistenza domiciliare": {
+            "precision": 0.9180327868852459,
+            "recall": 0.9333333333333333,
+            "f1": 0.9256198347107438,
+            "support": 60
+        },
+        "Strutture socio-sanitarie": {
+            "precision": 0.98,
+            "recall": 0.8166666666666667,
+            "f1": 0.8909090909090909,
+            "support": 60
+        },
+        "Vita sociale/eventi/sport": {
+            "precision": 1.0,
+            "recall": 0.9666666666666667,
+            "f1": 0.9830508474576272,
+            "support": 60
+        }
+    },
+    "macro_avg": {
+        "precision": 0.9399793582893055,
+        "recall": 0.9333333333333333,
+        "f1": 0.9338157622726878
+    },
+    "confusion_matrix": [
+        [
+            58,
+            0,
+            0,
+            0,
+            0,
+            2,
+            0,
+            0
+        ],
+        [
+            2,
+            58,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        [
+            0,
+            0,
+            56,
+            4,
+            0,
+            0,
+            0,
+            0
+        ],
+        [
+            5,
+            0,
+            0,
+            55,
+            0,
+            0,
+            0,
+            0
+        ],
+        [
+            0,
+            0,
+            5,
+            0,
+            54,
+            1,
+            0,
+            0
+        ],
+        [
+            0,
+            0,
+            0,
+            0,
+            0,
+            60,
+            0,
+            0
+        ],
+        [
+            0,
+            0,
+            0,
+            0,
+            0,
+            11,
+            49,
+            0
+        ],
+        [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            58
+        ]
+    ]
+}

@@ -1,0 +1,62 @@
+services:
+
+  # ── 1. Ollama model server ──────────────────────────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama_data:/root/.ollama   # persists downloaded models across restarts
+    ports:
+      - "11434:11434"               # expose only if you need direct access; remove otherwise
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ── 2. One-time model pull (runs at startup, exits when done) ───────────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./entrypoint.sh:/entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    restart: "no"                   # runs once and exits — docker-compose won't restart it
+
+  # ── 3. FastAPI classification service ──────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: classification-api
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      - OLLAMA_HOST=http://ollama:11434   # tells the ollama Python client where to connect
+      - API_BEARER_TOKEN=${API_BEARER_TOKEN}
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./feedback.csv:/app/feedback.csv   # persist feedback between container rebuilds
+      - ./outputs:/app/outputs             # persist label mapping
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  ollama_data:    # named volume — survives container removal, avoids re-downloading the model

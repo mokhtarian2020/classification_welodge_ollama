@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.env
+.git/
+.gitignore
+outputs/model/
+data/emails_full.json
+*.pt
+*.pth
+*.safetensors
+model_metrics.json
+feedback.csv

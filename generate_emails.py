@@ -18,19 +18,25 @@ fake = Faker("it_IT")
 # CATEGORIES & SUBJECT LINES
 # --------------------------------------------------------------------------
 CATEGORIES = [
-    "Legale", "Contabilità", "Fatturazione", "Auto Aziendali",
-    "Customer Relation", "Risorse Umane", "Acquisti", "Servizi"
+    "Istruzione/formazione/inclusione scolastica",
+    "Strutture socio-sanitarie",
+    "Rapporti con datori di lavoro",
+    "Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media",
+    "Inclusione lavorativa",
+    "Salute/sanità/progetto di vita/assistenza domiciliare",
+    "Vita sociale/eventi/sport",
+    "Altro"
 ]
 
 subjects = {
-    "Legale":           ["Consulenza legale urgente", "Clausola contrattuale dubbia", "Procedura legale"],
-    "Contabilità":      ["Errore quadratura contabile", "Report spese incompleto", "Bilancio da rivedere"],
-    "Fatturazione":     ["Fattura mancante", "Nota di credito errata", "Doppia fatturazione"],
-    "Auto Aziendali":   ["Guasto veicolo aziendale", "Revisione auto", "Richiesta auto sostitutiva"],
-    "Customer Relation":["Reclamo cliente", "Feedback negativo", "Ordine incompleto"],
-    "Risorse Umane":    ["Richiesta ferie", "Errore cedolino", "Aggiornamento benefit"],
-    "Acquisti":         ["Ordine in ritardo", "Preventivo urgente", "Fornitura non conforme"],
-    "Servizi":          ["Guasto impianto", "Supporto tecnico", "Interruzione servizio"]
+    "Istruzione/formazione/inclusione scolastica": ["Mancato sostegno scolastico", "PEI non aggiornato", "Esclusione attività scolastiche"],
+    "Strutture socio-sanitarie": ["Problemi struttura residenziale", "Lista d'attesa centro diurno", "Qualità assistenza insufficiente"],
+    "Rapporti con datori di lavoro": ["Discriminazione lavorativa disabilità", "Mancato accomodamento ragionevole", "Permessi legge 104 negati"],
+    "Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media": ["Barriera architettonica segnalata", "Trasporto non accessibile", "Sito web non accessibile"],
+    "Inclusione lavorativa": ["Tirocinio non attivato", "Collocamento mirato fermo", "Mancanza supporto inserimento lavoro"],
+    "Salute/sanità/progetto di vita/assistenza domiciliare": ["Assistenza domiciliare non attivata", "Progetto di vita mancante", "Ausili non forniti"],
+    "Vita sociale/eventi/sport": ["Esclusione eventi sociali", "Isolamento persona disabile", "Attività ricreative non accessibili"],
+    "Altro": ["Segnalazione generica", "Richiesta orientamento servizi", "Caso non categorizzabile"]
 }
 
 # --------------------------------------------------------------------------

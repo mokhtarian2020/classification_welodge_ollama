@@ -4,3 +4,4 @@ pandas
 tiktoken
 ollama
 apscheduler
+python-dotenv

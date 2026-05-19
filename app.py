@@ -1,12 +1,26 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 from predict_email import predict, json_to_bert_input
+from dotenv import load_dotenv
 import pandas as pd
 import os
 import uvicorn
 
+load_dotenv()
 app = FastAPI()
 FEEDBACK_FILE = "feedback.csv"
+API_BEARER_TOKEN = os.environ.get("API_BEARER_TOKEN")
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+def verify_token(authorization: str = Header(...)):
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization format.")
+    token = authorization[len("Bearer "):]
+    if token != API_BEARER_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized.")
 
 class EmailRequest(BaseModel):
     soggetto: str
@@ -15,7 +29,8 @@ class EmailRequest(BaseModel):
     correct_label: str | None = None  # Opzionale
 
 @app.post("/predict")
-def predict_route(email: EmailRequest):
+def predict_route(email: EmailRequest, authorization: str = Header(...)):
+    verify_token(authorization)
     email_dict = email.dict(exclude_unset=True)
     label = predict(email_dict)
     return {
@@ -24,7 +39,8 @@ def predict_route(email: EmailRequest):
     }
 
 @app.post("/feedback")
-def feedback_route(email: EmailRequest):
+def feedback_route(email: EmailRequest, authorization: str = Header(...)):
+    verify_token(authorization)
     if not email.correct_label:
         return {"errore": "Manca il campo correct_label."}
 

@@ -9,6 +9,12 @@ outputs/model/
 *.pt
 *.pth
 *.bin
+
+# Virtual Environment
+venv/
+env/
+.env/
+.venv/
 *.so
 .Python
 build/
