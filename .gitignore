@@ -1,3 +1,10 @@
+# Secrets and credentials - NEVER commit these
+password.txt
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
 # Python
 __pycache__/
 *.py[cod]

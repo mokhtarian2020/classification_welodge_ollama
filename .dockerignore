@@ -13,3 +13,22 @@ data/emails_full.json
 *.safetensors
 model_metrics.json
 feedback.csv
+# Credentials — never in image
+password.txt
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+# Dev/deploy scripts not needed in image
+build_and_push.sh
+deploy_vm.sh
+docker-compose*.yml
+schedule_retrain.py
+evaluate_model_metrics.py
+generate_emails.py
+initialize_feedback_csv.py
+retrain_with_feedback.py
+train_model.py
+HANDOVER_*.md
+README.md
+points/

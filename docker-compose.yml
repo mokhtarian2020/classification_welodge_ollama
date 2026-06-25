@@ -10,11 +10,11 @@ services:
       - "11434:11434"               # expose only if you need direct access; remove otherwise
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
-      interval: 15s
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
       timeout: 10s
       retries: 5
-      start_period: 20s
+      start_period: 15s
 
   # ── 2. One-time model pull (runs at startup, exits when done) ───────────────
   ollama-init:
