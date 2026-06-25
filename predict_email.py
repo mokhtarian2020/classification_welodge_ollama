@@ -1,47 +1,71 @@
-import ollama
-import pandas as pd
+import json
+import math
+import os
+import re
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
+
 import tiktoken
-from collections import Counter, defaultdict
 
 # Constants
-MODEL_NAME = "qwen2.5:7b"
+MODEL_NAME = "qwen2.5:3b"
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 CHUNK_SIZE_TOKENS = 1800
 MAX_TOTAL_TOKENS = 2048
 TOKEN_BUFFER = 200
+SCORE_SMOOTHING = 2.0
+SCORE_PRIOR = 0.02
+PREDICT_CACHE_SIZE = int(os.environ.get("PREDICT_CACHE_SIZE", "512"))
+OLLAMA_RATING_NUM_CTX = 2048
+OLLAMA_MAX_WORKERS = int(os.environ.get("OLLAMA_MAX_WORKERS", "4"))
 
-# Load labels
-LABELS = pd.read_csv("outputs/label_mapping.csv").squeeze().tolist()
-
-NUMBERED_LABELS = {str(i + 1): label for i, label in enumerate(LABELS)}
-
-CATEGORY_DESCRIPTIONS = [
-    "la segnalazione riguarda PRINCIPALMENTE una barriera fisica, digitale o di trasporto in sé (rampa rotta, sito web inaccessibile, bus senza pedana, semaforo senza segnale sonoro) — NON usare se il focus è l'esclusione sociale",
-    "segnalazioni generiche, richieste di orientamento, casi non classificabili o che toccano più categorie",
-    "RICERCA di lavoro: tirocini, borse lavoro, collocamento obbligatorio L.68/99, job coach, percorsi di inserimento — NON usare se c'è già un rapporto di lavoro attivo",
-    "sostegno scolastico, insegnante di sostegno, PEI, PDP, DSA, inclusione in classe, difficoltà scolastiche",
-    "conflitti o problemi con un DATORE DI LAVORO esistente: discriminazione, permessi L.104, licenziamento, adattamento postazione — NON usare per chi cerca lavoro",
-    "cure e assistenza ricevute A DOMICILIO o in modo individuale: ADI, ausili prescritti, progetto di vita personale, caregiver familiare, invalidità civile — NON riguarda strutture residenziali",
-    "problemi con il FUNZIONAMENTO di una struttura collettiva dove la persona vive o frequenta: RSA, centro diurno, casa famiglia, comunità — il problema è nella struttura, NON nelle cure a casa",
-    "ESCLUSIONE o ISOLAMENTO dalla vita sociale: teatro, eventi culturali, sport amatoriale, attività ricreative, vacanze, aggregazione — usare quando il focus è la partecipazione sociale negata, anche se causa è una barriera",
+CATEGORIES = [
+    {
+        "key": "Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media",
+        "description": "barriere fisiche, digitali o di trasporto: rampe, ascensori, bus, siti web inaccessibili",
+    },
+    {
+        "key": "Altro",
+        "description": "segnalazioni generiche, orientamento, casi non classificabili o multi-categoria",
+    },
+    {
+        "key": "Inclusione lavorativa",
+        "description": "ricerca lavoro, tirocini, borse lavoro, collocamento mirato, inserimento lavorativo",
+    },
+    {
+        "key": "Istruzione/formazione/inclusione scolastica",
+        "description": "scuola, PEI, PDP, insegnante di sostegno, inclusione scolastica, formazione",
+    },
+    {
+        "key": "Rapporti con datori di lavoro",
+        "description": "licenziamento, discriminazione, permessi legge 104, conflitti con datore di lavoro",
+    },
+    {
+        "key": "Salute/sanità/progetto di vita/assistenza domiciliare",
+        "description": "assistenza domiciliare ADI, ausili, cure sanitarie, invalidità civile, progetto di vita",
+    },
+    {
+        "key": "Strutture socio-sanitarie",
+        "description": "RSA, centri diurni, comunità alloggio, problemi nelle strutture residenziali",
+    },
+    {
+        "key": "Vita sociale/eventi/sport",
+        "description": "teatro, cinema, eventi culturali, sport, vacanze, esclusione dalla vita sociale",
+    },
 ]
 
-# Use LLaMA-compatible tokenizer
 ENCODING = tiktoken.get_encoding("cl100k_base")
 
-def json_to_bert_input(email_json):
-    soggetto = email_json.get("soggetto", "").strip()
-    corpo = email_json.get("corpo", "").strip()
-    allegati_list = email_json.get("allegati", [])
 
-    allegati_text = " ".join(
-        att.get("testo", "").strip()
-        for att in allegati_list if isinstance(att, dict)
-    ).strip()
+def extract_input(request_json):
+    return request_json.get("input", "").strip()
 
-    return f"{soggetto} [SEP] {corpo} [SEP] {allegati_text}"
 
 def count_tokens(text):
     return len(ENCODING.encode(text))
+
 
 def split_into_chunks(text, max_tokens=CHUNK_SIZE_TOKENS):
     words = text.split()
@@ -59,87 +83,162 @@ def split_into_chunks(text, max_tokens=CHUNK_SIZE_TOKENS):
 
     return chunks
 
-def sanitize_prediction(pred: str) -> str:
-    # Extract first token — model should respond with just a digit
-    token = pred.strip().split()[0].rstrip(".").strip() if pred.strip() else ""
-    if token in NUMBERED_LABELS:
-        return NUMBERED_LABELS[token]
-    # Fallback: exact name match
-    if token in LABELS:
-        return token
-    raise ValueError(f"❌ Invalid prediction received: '{pred.strip()}'")
 
-def classify_chunk_ollama(chunk_text):
-    numbered = "\n".join(
-        f"{i+1}. {label} — {CATEGORY_DESCRIPTIONS[i]}"
-        for i, label in enumerate(LABELS)
+def format_probability(probability):
+    if probability < 0.0005:
+        return "0,0"
+    return f"{probability:.3f}".replace(".", ",")
+
+
+def _ollama_chat(payload):
+    request = urllib.request.Request(
+        f"{OLLAMA_HOST.rstrip('/')}/api/chat",
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
-    prompt = f"""Sei un esperto classificatore di segnalazioni sociali per persone con disabilità.
-Leggi il testo seguente e rispondi SOLO con il numero della categoria corretta.
-
-Categorie:
-{numbered}
-
-REGOLE DI DISAMBIGUAZIONE (leggi con attenzione):
-- Se il testo parla di ESCLUSIONE da eventi, sport, tempo libero o vita sociale → scegli 8, anche se menziona barriere fisiche
-- Se il testo parla di una BARRIERA FISICA/DIGITALE come problema principale (rampa, sito, bus) senza contesto sociale → scegli 1
-- Se il problema riguarda una STRUTTURA RESIDENZIALE o centro diurno (personale, regole, condizioni interne) → scegli 7
-- Se il problema riguarda CURE O ASSISTENZA A DOMICILIO o ausili individuali → scegli 6
-
-Regole di formato:
-- Rispondi ESCLUSIVAMENTE con un numero intero da 1 a {len(LABELS)}.
-- Nessuna spiegazione, nessun testo aggiuntivo.
-
-Testo da classificare:
-{chunk_text}
-
-Numero categoria:"""
 
     try:
-        response = ollama.chat(
-            model=MODEL_NAME,
-            options={"temperature": 0},
-            messages=[
-                {
-                    "role": "system",
-                    "content": f"Sei un classificatore di segnalazioni sociali per persone con disabilità. Rispondi SOLO con un numero intero da 1 a {len(LABELS)}. Nessun testo aggiuntivo."
-                },
-                {"role": "user", "content": prompt},
-            ],
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode()
+        raise RuntimeError(f"Errore API Ollama ({exc.code}): {body}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Errore API Ollama: {exc}") from exc
+
+
+def _parse_digit_rating(logprob_entry):
+    digit_logprobs = {}
+
+    for item in [logprob_entry] + logprob_entry.get("top_logprobs", []):
+        token = item.get("token", "").strip()
+        if re.fullmatch(r"[0-9]", token):
+            digit_logprobs[token] = max(
+                digit_logprobs.get(token, float("-inf")),
+                item.get("logprob", float("-inf")),
+            )
+
+    if not digit_logprobs:
+        return 0.0
+
+    max_logprob = max(digit_logprobs.values())
+    weighted_sum = sum(
+        int(digit) * math.exp(logprob - max_logprob)
+        for digit, logprob in digit_logprobs.items()
+    )
+    total = sum(math.exp(logprob - max_logprob) for logprob in digit_logprobs.values())
+    return weighted_sum / total
+
+
+def _category_rating(category, text):
+    extra = ""
+    if category["key"] == "Altro":
+        extra = (
+            " Assegna 9 solo se il testo NON è attribuibile a nessuna altra categoria. "
+            "Altrimenti usa 0 o 1."
         )
 
-        result = response["message"]["content"].strip()
-        return sanitize_prediction(result)
+    prompt = (
+        f"Sei un classificatore di segnalazioni per persone con disabilità.\n"
+        f"Valuta la pertinenza del testo alla categoria (0=per nulla pertinente, 9=massima pertinenza).\n"
+        f"Categoria: {category['key']}\n"
+        f"Definizione: {category['description']}{extra}\n"
+        f"Testo: {text}\n"
+        f"Rispondi SOLO con un numero intero da 0 a 9."
+    )
 
-    except Exception as e:
-        raise RuntimeError(f"Ollama API error: {e}")
+    response = _ollama_chat(
+        {
+            "model": MODEL_NAME,
+            "stream": False,
+            "logprobs": True,
+            "top_logprobs": 20,
+            "messages": [
+                {"role": "system", "content": "Rispondi solo con un numero intero da 0 a 9."},
+                {"role": "user", "content": prompt},
+            ],
+            "options": {
+                "temperature": 0,
+                "num_predict": 1,
+                "num_ctx": OLLAMA_RATING_NUM_CTX,
+            },
+        }
+    )
 
-def predict(email_json):
-    full_text = json_to_bert_input(email_json)
+    logprob_entries = response.get("logprobs") or []
+    if not logprob_entries:
+        return category["key"], 0.0
 
+    return category["key"], _parse_digit_rating(logprob_entries[0])
+
+
+def _ratings_for_text(text):
+    ratings = {}
+    max_workers = min(OLLAMA_MAX_WORKERS, len(CATEGORIES))
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_category_rating, category, text) for category in CATEGORIES]
+        for future in as_completed(futures):
+            key, rating = future.result()
+            ratings[key] = rating
+
+    return ratings
+
+
+def _ratings_to_probabilities(ratings):
+    weights = {
+        key: math.exp(rating / SCORE_SMOOTHING) + SCORE_PRIOR
+        for key, rating in ratings.items()
+    }
+    total = sum(weights.values()) or 1.0
+    return {key: weight / total for key, weight in weights.items()}
+
+
+def _merge_rating_maps(rating_maps):
+    merged = {category["key"]: 0.0 for category in CATEGORIES}
+    for rating_map in rating_maps:
+        for key, rating in rating_map.items():
+            merged[key] += rating
+
+    count = len(rating_maps) or 1
+    return {key: value / count for key, value in merged.items()}
+
+
+def build_scores_response(probabilities):
+    scores = [
+        {"key": key, "value": format_probability(probability)}
+        for key, probability in probabilities.items()
+    ]
+    scores.sort(key=lambda item: float(item["value"].replace(",", ".")), reverse=True)
+    return {"status": 200, "scores": scores}
+
+
+def _predict_uncached(full_text):
     if count_tokens(full_text) <= (MAX_TOTAL_TOKENS - TOKEN_BUFFER):
-        return classify_chunk_ollama(full_text)
-
-    chunks = split_into_chunks(full_text)
-    preds = []
-    probs_sum = defaultdict(float)
-
-    for chunk in chunks:
-        label = classify_chunk_ollama(chunk)
-        label_id = LABELS.index(label)
-        preds.append(label_id)
-        probs_sum[label_id] += 1
-
-    counts = Counter(preds)
-    most_common = counts.most_common()
-
-    if len(chunks) == 2:
-        a, b = preds[0], preds[1]
-        return LABELS[a] if probs_sum[a] >= probs_sum[b] else LABELS[b]
+        ratings = _ratings_for_text(full_text)
     else:
-        if len(most_common) > 1 and most_common[0][1] == most_common[1][1]:
-            tied = [most_common[0][0], most_common[1][0]]
-            best = max(tied, key=lambda x: probs_sum[x])
-            return LABELS[best]
-        else:
-            return LABELS[most_common[0][0]]
+        chunks = split_into_chunks(full_text)
+        chunk_ratings = [_ratings_for_text(chunk) for chunk in chunks]
+        ratings = _merge_rating_maps(chunk_ratings)
+
+    probabilities = _ratings_to_probabilities(ratings)
+    return build_scores_response(probabilities)
+
+
+@lru_cache(maxsize=PREDICT_CACHE_SIZE)
+def _predict_cached(full_text):
+    return _predict_uncached(full_text)
+
+
+def predict(request_json):
+    full_text = extract_input(request_json)
+    if not full_text:
+        probabilities = {category["key"]: 1.0 / len(CATEGORIES) for category in CATEGORIES}
+        return build_scores_response(probabilities)
+
+    cached = _predict_cached(full_text)
+    return {
+        "status": cached["status"],
+        "scores": [{"key": score["key"], "value": score["value"]} for score in cached["scores"]],
+    }

@@ -6,7 +6,7 @@ import json
 from tqdm import tqdm
 
 # Constants
-MODEL_NAME = "qwen2.5:7b"
+MODEL_NAME = "qwen2.5:3b"
 
 # Load labels
 LABELS = pd.read_csv("outputs/label_mapping.csv").squeeze().tolist()

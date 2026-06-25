@@ -47,7 +47,7 @@ Richiesta HTTP in arrivo
         ▼
   predict_email.py
         │
-        ├─ Unisce i campi email (soggetto + corpo + allegati) in un'unica stringa
+        ├─ Riceve il testo da classificare nel campo `input`
         ├─ Divide il testo in chunk di token (max 1800 token, usando tiktoken cl100k_base)
         ├─ Invia ogni chunk a Ollama (qwen2.5:7b) con un prompt strutturato in italiano
         └─ Voto di maggioranza tra le predizioni dei chunk → restituisce l'etichetta finale
@@ -154,17 +154,18 @@ Classifica un'email.
 **Corpo della richiesta:**
 ```json
 {
-  "soggetto": "PEI non aggiornato",
-  "corpo": "Mio figlio non ha ricevuto il piano educativo...",
-  "allegati": []
+  "input": "Indicazioni Di seguito le indicazioni richieste: test di email"
 }
 ```
 
 **Risposta:**
 ```json
 {
-  "etichetta_predetta": "Istruzione/formazione/inclusione scolastica",
-  "testo_input": "PEI non aggiornato [SEP] Mio figlio non ha ricevuto il piano educativo... [SEP] "
+  "status": 200,
+  "scores": [
+    { "key": "Istruzione/formazione/inclusione scolastica", "value": "0,812" },
+    { "key": "Altro", "value": "0,188" }
+  ]
 }
 ```
 
@@ -174,13 +175,11 @@ Invia una correzione quando il modello ha predetto l'etichetta sbagliata.
 **Corpo della richiesta:**
 ```json
 {
-  "soggetto": "...",
-  "corpo": "...",
-  "allegati": [],
-  "correct_label": "Rapporti con datori di lavoro"
+  "input": "...",
+  "etichetta_corretta": "Rapporti con datori di lavoro"
 }
 ```
-La correzione viene salvata in `feedback.csv` solo se la predizione del modello differisce da `correct_label`.
+La correzione viene salvata in `feedback.csv` solo se la predizione del modello differisce da `etichetta_corretta`.
 
 ### GET /health
 Restituisce `{"status": "ok"}` — usato dai health check di Docker e dai load balancer.
@@ -252,7 +251,7 @@ Questo approccio è fragile. Usare `subprocess.run()` o una coda di task dedicat
 - **Aggiungere unit test** — almeno per `predict_email.py` (chunking, `sanitize_prediction`) e per gli endpoint dell'API
 - **Logging strutturato** — usare il modulo `logging` di Python o una libreria come `structlog`; scrivere i log su file o su un aggregatore di log
 - **Autenticazione multi-token** — emettere token per-client così da poter revocare singoli client
-- **Confidence scoring** — il modello restituisce attualmente solo un'etichetta; restituire un punteggio di confidenza aiuterebbe i sistemi downstream a decidere se escalare la segnalazione a un revisore umano
+- **Punteggi di confidenza** — l'endpoint `/predict` restituisce probabilità per tutte le categorie nel campo `scores`
 - **Active learning** — prioritizzare le predizioni a bassa confidenza per la revisione umana, poi reintrodurre automaticamente le correzioni nel ciclo di feedback
 - **Dati email reali** — il dataset di addestramento (`data/emails.csv`) è composto al 100% da dati sintetici. Sostituirlo o arricchirlo con email reali anonimizzate migliorerebbe significativamente l'accuratezza
 - **Rate limiting** — l'API non ha limiti di frequenza; aggiungerne tramite un reverse proxy (nginx, Traefik) o un middleware FastAPI

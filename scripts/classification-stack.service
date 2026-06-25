@@ -1,0 +1,20 @@
+[Unit]
+Description=Classification Welodge Docker Stack (Ollama + API)
+Documentation=https://ceia.gesan.it
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=amir.mokhtarian
+Group=docker
+WorkingDirectory=/home/amir.mokhtarian/classification
+Environment=HOME=/home/amir.mokhtarian
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml stop
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

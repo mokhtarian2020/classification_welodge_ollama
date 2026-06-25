@@ -47,7 +47,7 @@ Incoming HTTP request
         ▼
   predict_email.py
         │
-        ├─ Converts email fields (soggetto + corpo + allegati) into a single text string
+        ├─ Receives the text to classify in the `input` field
         ├─ Splits text into token chunks (max 1800 tokens each, using tiktoken cl100k_base)
         ├─ Sends each chunk to Ollama (qwen2.5:7b) with a structured Italian prompt
         └─ Majority-votes across chunk predictions → returns final label
@@ -154,17 +154,18 @@ Classify an email.
 **Request body:**
 ```json
 {
-  "soggetto": "PEI non aggiornato",
-  "corpo": "Mio figlio non ha ricevuto il piano educativo...",
-  "allegati": []
+  "input": "Indicazioni Di seguito le indicazioni richieste: test di email"
 }
 ```
 
 **Response:**
 ```json
 {
-  "etichetta_predetta": "Istruzione/formazione/inclusione scolastica",
-  "testo_input": "PEI non aggiornato [SEP] Mio figlio non ha ricevuto il piano educativo... [SEP] "
+  "status": 200,
+  "scores": [
+    { "key": "Istruzione/formazione/inclusione scolastica", "value": "0,812" },
+    { "key": "Altro", "value": "0,188" }
+  ]
 }
 ```
 
@@ -174,9 +175,7 @@ Submit a correction when the model predicted the wrong label.
 **Request body:**
 ```json
 {
-  "soggetto": "...",
-  "corpo": "...",
-  "allegati": [],
+  "input": "...",
   "correct_label": "Rapporti con datori di lavoro"
 }
 ```

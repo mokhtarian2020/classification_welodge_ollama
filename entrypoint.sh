@@ -8,7 +8,7 @@ until curl -sf http://ollama:11434/api/tags > /dev/null; do
     sleep 2
 done
 
-MODEL="qwen2.5:7b"
+MODEL="qwen2.5:3b"
 echo "[init] Checking if ${MODEL} is already pulled..."
 
 if ollama list 2>/dev/null | grep -q "${MODEL}"; then
