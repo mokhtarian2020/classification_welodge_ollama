@@ -17,42 +17,45 @@ MAX_TOTAL_TOKENS = 2048
 TOKEN_BUFFER = 200
 SCORE_SMOOTHING = 2.0
 SCORE_PRIOR = 0.02
+SCORE_PRIOR_ALTRO = 0.002
+ALTRO_KEY = "Altro"
 PREDICT_CACHE_SIZE = int(os.environ.get("PREDICT_CACHE_SIZE", "512"))
 OLLAMA_RATING_NUM_CTX = 2048
 OLLAMA_MAX_WORKERS = int(os.environ.get("OLLAMA_MAX_WORKERS", "4"))
 
 CATEGORIES = [
     {
-        "key": "Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media",
-        "description": "barriere fisiche, digitali o di trasporto: rampe, ascensori, bus, siti web inaccessibili",
+        "key": "Istruzione, formazione e inclusione socio-lavorativa (ambito tematico 01)",
+        "description": (
+            "istruzione, formazione professionale, inclusione scolastica, rapporti con il sistema "
+            "educativo e con i datori di lavoro, inclusione lavorativa delle persone con disabilità"
+        ),
     },
     {
-        "key": "Altro",
-        "description": "segnalazioni generiche, orientamento, casi non classificabili o multi-categoria",
+        "key": "Servizi sociosanitari, progetto di vita e assistenza (ambito tematico 02)",
+        "description": (
+            "strutture sociosanitarie, progetto di vita individuale, assistenza domiciliare "
+            "e servizi di supporto alla persona"
+        ),
     },
     {
-        "key": "Inclusione lavorativa",
-        "description": "ricerca lavoro, tirocini, borse lavoro, collocamento mirato, inserimento lavorativo",
+        "key": "Accessibilità, mobilità e tecnologie inclusive (ambito tematico 03)",
+        "description": (
+            "accessibilità fisica e digitale, eliminazione delle barriere architettoniche, "
+            "mobilità e trasporti, accessibilità dei media e dei servizi digitali"
+        ),
     },
     {
-        "key": "Istruzione/formazione/inclusione scolastica",
-        "description": "scuola, PEI, PDP, insegnante di sostegno, inclusione scolastica, formazione",
+        "key": "Partecipazione sociale, culturale, ricreativa e sportiva (ambito tematico 04)",
+        "description": (
+            "attività sociali, culturali, ricreative e sportive; eventi e manifestazioni pubbliche "
+            "e private; associazionismo; turismo accessibile; accesso e fruizione di servizi "
+            "e iniziative aperti al pubblico"
+        ),
     },
     {
-        "key": "Rapporti con datori di lavoro",
-        "description": "licenziamento, discriminazione, permessi legge 104, conflitti con datore di lavoro",
-    },
-    {
-        "key": "Salute/sanità/progetto di vita/assistenza domiciliare",
-        "description": "assistenza domiciliare ADI, ausili, cure sanitarie, invalidità civile, progetto di vita",
-    },
-    {
-        "key": "Strutture socio-sanitarie",
-        "description": "RSA, centri diurni, comunità alloggio, problemi nelle strutture residenziali",
-    },
-    {
-        "key": "Vita sociale/eventi/sport",
-        "description": "teatro, cinema, eventi culturali, sport, vacanze, esclusione dalla vita sociale",
+        "key": ALTRO_KEY,
+        "description": "solo segnalazioni generiche, richieste di orientamento o casi davvero non classificabili",
     },
 ]
 
@@ -133,10 +136,11 @@ def _parse_digit_rating(logprob_entry):
 
 def _category_rating(category, text):
     extra = ""
-    if category["key"] == "Altro":
+    if category["key"] == ALTRO_KEY:
         extra = (
-            " Assegna 9 solo se il testo NON è attribuibile a nessuna altra categoria. "
-            "Altrimenti usa 0 o 1."
+            " Usa 9 SOLO se il testo non riguarda in alcun modo scuola, lavoro, salute, "
+            "strutture, accessibilità, mobilità, vita sociale o eventi. "
+            "Se anche solo parzialmente pertinente a un ambito tematico, rispondi 0."
         )
 
     prompt = (
@@ -186,9 +190,13 @@ def _ratings_for_text(text):
     return ratings
 
 
+def _category_prior(key):
+    return SCORE_PRIOR_ALTRO if key == ALTRO_KEY else SCORE_PRIOR
+
+
 def _ratings_to_probabilities(ratings):
     weights = {
-        key: math.exp(rating / SCORE_SMOOTHING) + SCORE_PRIOR
+        key: math.exp(rating / SCORE_SMOOTHING) + _category_prior(key)
         for key, rating in ratings.items()
     }
     total = sum(weights.values()) or 1.0

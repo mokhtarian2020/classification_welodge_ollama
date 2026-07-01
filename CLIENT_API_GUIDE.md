@@ -20,7 +20,7 @@ Authorization: Bearer <token>
 
 ## POST /predict
 
-Classifica un testo valutando **tutte le 8 categorie** con un punteggio pesato. La somma degli `value` in `scores` è **1**.
+Classifica un testo valutando **tutte le 5 categorie** con un punteggio pesato. La somma degli `value` in `scores` è **1**.
 
 ### ESEMPIO INPUT
 
@@ -38,7 +38,7 @@ Classifica un testo valutando **tutte le 8 categorie** con un punteggio pesato. 
 curl -X POST https://ceia.gesan.it/predict \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"input": "Indicazioni Di seguito le indicazioni richieste: test di email"}'
+  -d '{"input": "La rampa del municipio è rotta. Utilizzo sedia a rotelle."}'
 ```
 
 ### ESEMPIO OUTPUT
@@ -47,14 +47,11 @@ curl -X POST https://ceia.gesan.it/predict \
 {
   "status": 200,
   "scores": [
-    { "key": "Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media", "value": "0,921" },
-    { "key": "Vita sociale/eventi/sport", "value": "0,079" },
+    { "key": "Accessibilità, mobilità e tecnologie inclusive (ambito tematico 03)", "value": "0,921" },
+    { "key": "Partecipazione sociale, culturale, ricreativa e sportiva (ambito tematico 04)", "value": "0,079" },
     { "key": "Altro", "value": "0,0" },
-    { "key": "Inclusione lavorativa", "value": "0,0" },
-    { "key": "Istruzione/formazione/inclusione scolastica", "value": "0,0" },
-    { "key": "Rapporti con datori di lavoro", "value": "0,0" },
-    { "key": "Salute/sanità/progetto di vita/assistenza domiciliare", "value": "0,0" },
-    { "key": "Strutture socio-sanitarie", "value": "0,0" }
+    { "key": "Istruzione, formazione e inclusione socio-lavorativa (ambito tematico 01)", "value": "0,0" },
+    { "key": "Servizi sociosanitari, progetto di vita e assistenza (ambito tematico 02)", "value": "0,0" }
   ]
 }
 ```
@@ -62,7 +59,7 @@ curl -X POST https://ceia.gesan.it/predict \
 | Campo    | Tipo   | Descrizione |
 |----------|--------|-------------|
 | `status` | int    | Codice di esito (`200` in caso di successo) |
-| `scores` | array  | Tutte le 8 categorie, ordinate per probabilità decrescente |
+| `scores` | array  | Tutte le 5 categorie, ordinate per probabilità decrescente |
 | `key`    | string | Nome della categoria (vedi tabella sotto) |
 | `value`  | string | Peso della categoria; somma di tutti i `value` = 1. Formato decimale con virgola (es. `"0,989"`, `"0,0"`) |
 
@@ -93,21 +90,18 @@ curl https://ceia.gesan.it/health
 
 ## Categorie disponibili (campo `key`)
 
-| # | Categoria |
-|---|-----------|
-| 1 | Accessibilità/barriere architettoniche/mobilità e trasporti/barriere digitali e media |
-| 2 | Altro |
-| 3 | Inclusione lavorativa |
-| 4 | Istruzione/formazione/inclusione scolastica |
-| 5 | Rapporti con datori di lavoro |
-| 6 | Salute/sanità/progetto di vita/assistenza domiciliare |
-| 7 | Strutture socio-sanitarie |
-| 8 | Vita sociale/eventi/sport |
+| # | Categoria | Contenuto |
+|---|-----------|-----------|
+| 1 | Istruzione, formazione e inclusione socio-lavorativa (ambito tematico 01) | Istruzione, formazione professionale, inclusione scolastica, rapporti con il sistema educativo e con i datori di lavoro, inclusione lavorativa |
+| 2 | Servizi sociosanitari, progetto di vita e assistenza (ambito tematico 02) | Strutture sociosanitarie, progetto di vita individuale, assistenza domiciliare e servizi di supporto alla persona |
+| 3 | Accessibilità, mobilità e tecnologie inclusive (ambito tematico 03) | Accessibilità fisica e digitale, barriere architettoniche, mobilità e trasporti, media e servizi digitali |
+| 4 | Partecipazione sociale, culturale, ricreativa e sportiva (ambito tematico 04) | Attività sociali, culturali, ricreative e sportive; eventi; associazionismo; turismo accessibile |
+| 5 | Altro | Segnalazioni generiche o non classificabili |
 
 ---
 
 ## Tempi di risposta
 
-I tempi di risposta tipici sono **~25–40 secondi** per richiesta (il modello valuta tutte e 8 le categorie). Solo la prima richiesta dopo un riavvio del servizio può richiedere più tempo per il caricamento iniziale del modello in memoria.
+I tempi di risposta tipici sono **~15–25 secondi** per richiesta (il modello valuta tutte e 5 le categorie in parallelo). Solo la prima richiesta dopo un riavvio del servizio può richiedere più tempo per il caricamento iniziale del modello in memoria.
 
 La macchina virtuale esegue il modello **solo su CPU**. Con una **GPU dedicata**, i tempi scenderebbero a **meno di 1 secondo** per le stesse richieste.
