@@ -1,6 +1,7 @@
 import json
 import math
 import os
+import re
 import urllib.error
 import urllib.request
 from functools import lru_cache
@@ -63,6 +64,16 @@ CATEGORY_OPTIONS = "\n".join(
     f"{i + 1} = {category['key']}: {category['description']}"
     for i, category in enumerate(CATEGORIES)
 )
+
+# Deterministic safety net: unambiguous employment-relationship terms force
+# area 01 to the top. Prompt tuning for these cases proved fragile (fixing one
+# example regressed others), so this narrow rule is applied after the model.
+EMPLOYMENT_CATEGORY_KEY = CATEGORIES[0]["key"]
+EMPLOYMENT_PATTERN = re.compile(
+    r"licenzi|mobbing|demansion|datore\s+di\s+lavoro|discriminazione\s+sul\s+lavoro",
+    re.IGNORECASE,
+)
+EMPLOYMENT_BOOST = 1.5
 
 ENCODING = tiktoken.get_encoding("cl100k_base")
 
@@ -205,6 +216,20 @@ def build_scores_response(probabilities):
     return {"status": 200, "scores": scores}
 
 
+def _apply_employment_rule(text, probabilities):
+    if not EMPLOYMENT_PATTERN.search(text):
+        return probabilities
+
+    top_key = max(probabilities, key=probabilities.get)
+    if top_key == EMPLOYMENT_CATEGORY_KEY:
+        return probabilities
+
+    adjusted = dict(probabilities)
+    adjusted[EMPLOYMENT_CATEGORY_KEY] = probabilities[top_key] * EMPLOYMENT_BOOST
+    total = sum(adjusted.values())
+    return {key: value / total for key, value in adjusted.items()}
+
+
 def _predict_uncached(full_text):
     if count_tokens(full_text) <= (MAX_TOTAL_TOKENS - TOKEN_BUFFER):
         probabilities = _classify_text(full_text)
@@ -212,6 +237,7 @@ def _predict_uncached(full_text):
         chunks = split_into_chunks(full_text)
         probabilities = _merge_probability_maps([_classify_text(chunk) for chunk in chunks])
 
+    probabilities = _apply_employment_rule(full_text, probabilities)
     return build_scores_response(probabilities)
 
 
