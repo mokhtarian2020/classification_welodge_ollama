@@ -32,23 +32,23 @@ CATEGORIES = [
         "description": (
             "RSA, centri diurni, comunità alloggio, strutture residenziali, assistenza domiciliare ADI, "
             "ausili sanitari, cure mediche, invalidità civile, progetto di vita individuale, "
-            "servizi di supporto alla persona"
+            "assistenza e cura della persona"
         ),
     },
     {
         "key": "Accessibilità, mobilità e tecnologie inclusive (ambito tematico 03)",
         "description": (
-            "rampe, ascensori, barriere architettoniche, parcheggi disabili, bus, treni, trasporto "
-            "pubblico, mobilità, siti web inaccessibili, barriere digitali, accessibilità dei media "
-            "e dei servizi digitali"
+            "barriere architettoniche e digitali: rampe, ascensori, parcheggi disabili, bus, treni, "
+            "trasporto pubblico, mobilità, siti web non accessibili, screen reader, moduli online, "
+            "app, media digitali. Include ogni problema tecnico di accessibilità fisica o informatica"
         ),
     },
     {
         "key": "Partecipazione sociale, culturale, ricreativa e sportiva (ambito tematico 04)",
         "description": (
-            "teatro, cinema, musei, eventi culturali, sport, palestre, corsi ricreativi, vacanze, "
-            "turismo accessibile, associazionismo, feste e manifestazioni pubbliche, esclusione "
-            "dalla vita sociale e ricreativa"
+            "partecipazione ed esclusione da attività sociali: teatro, cinema, musei, eventi culturali, "
+            "sport, palestre, corsi ricreativi, vacanze, turismo, associazionismo, feste e manifestazioni, "
+            "accesso e fruizione di servizi e iniziative aperti al pubblico"
         ),
     },
 ]
