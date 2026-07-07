@@ -2,6 +2,7 @@ import json
 import math
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from functools import lru_cache
@@ -109,7 +110,7 @@ def format_probability(probability):
     return f"{probability:.3f}".replace(".", ",")
 
 
-def _ollama_chat(payload):
+def _ollama_chat(payload, retries=3):
     request = urllib.request.Request(
         f"{OLLAMA_HOST.rstrip('/')}/api/chat",
         data=json.dumps(payload).encode(),
@@ -117,14 +118,32 @@ def _ollama_chat(payload):
         method="POST",
     )
 
+    last_error = None
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                return json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode()
+            raise RuntimeError(f"Errore API Ollama ({exc.code}): {body}") from exc
+        except urllib.error.URLError as exc:
+            last_error = exc
+            if attempt < retries:
+                time.sleep(2 ** attempt)
+
+    raise RuntimeError(f"Errore API Ollama: {last_error}") from last_error
+
+
+def check_ollama_ready():
+    """Return True if Ollama is reachable and the model is loaded."""
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
-            return json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        body = exc.read().decode()
-        raise RuntimeError(f"Errore API Ollama ({exc.code}): {body}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"Errore API Ollama: {exc}") from exc
+        tags_request = urllib.request.Request(f"{OLLAMA_HOST.rstrip('/')}/api/tags")
+        with urllib.request.urlopen(tags_request, timeout=5) as response:
+            tags = json.loads(response.read())
+        models = [model.get("name", "") for model in tags.get("models", [])]
+        return any(MODEL_NAME in name for name in models)
+    except Exception:
+        return False
 
 
 def _uniform_probabilities():

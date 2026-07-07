@@ -38,6 +38,31 @@ check_api_health() {
     curl -sf --connect-timeout 5 --max-time 10 "http://127.0.0.1/health" >/dev/null 2>&1
 }
 
+check_predict_smoke() {
+    local token
+    token=$(grep -E '^API_BEARER_TOKEN=' "$APP_DIR/.env" 2>/dev/null | cut -d= -f2-)
+    if [ -z "$token" ]; then
+        log "WARN: API_BEARER_TOKEN not found in .env, skipping predict smoke test"
+        return 0
+    fi
+
+    local response http_code
+    response=$(curl -s --connect-timeout 5 --max-time 30 \
+        -w "\nHTTP_CODE:%{http_code}" \
+        -X POST "http://127.0.0.1/predict" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${token}" \
+        -d '{"input":"test watchdog"}')
+
+    http_code=$(echo "$response" | tail -1 | cut -d: -f2)
+    if [ "$http_code" = "200" ]; then
+        return 0
+    fi
+
+    log "ISSUE: predict smoke test returned HTTP $http_code"
+    return 1
+}
+
 restart_stack() {
     log "ACTION: restarting full stack (docker compose up -d)"
     cd "$APP_DIR"
@@ -85,10 +110,13 @@ main() {
     elif ! check_api_health; then
         log "ISSUE: HTTP health check failed on http://127.0.0.1/health"
         issues=$((issues + 1))
+    elif ! check_predict_smoke; then
+        log "ISSUE: predict smoke test failed"
+        issues=$((issues + 1))
     fi
 
     if [ "$issues" -eq 0 ]; then
-        log "OK: ollama=healthy api=healthy model=qwen2.5:3b http=ok"
+        log "OK: ollama=healthy api=healthy model=qwen2.5:3b http=ok predict=ok"
         exit 0
     fi
 
@@ -97,12 +125,12 @@ main() {
     if [ "$ollama_running" != "true" ] || [ "$ollama_health" != "healthy" ] || ! check_ollama_model; then
         restart_stack
         sleep 30
-    elif [ "$api_running" != "true" ] || [ "$api_health" != "healthy" ] || ! check_api_health; then
+    elif [ "$api_running" != "true" ] || [ "$api_health" != "healthy" ] || ! check_api_health || ! check_predict_smoke; then
         restart_service app
         sleep 15
     fi
 
-    if check_ollama_model && check_api_health; then
+    if check_ollama_model && check_api_health && check_predict_smoke; then
         log "RECOVERY: successful"
         exit 0
     fi
@@ -111,7 +139,7 @@ main() {
     restart_stack
     sleep 45
 
-    if check_ollama_model && check_api_health; then
+    if check_ollama_model && check_api_health && check_predict_smoke; then
         log "RECOVERY: successful after full restart"
         exit 0
     fi

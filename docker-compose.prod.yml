@@ -10,6 +10,8 @@ services:
       - OLLAMA_NUM_PARALLEL=2
     volumes:
       - ollama_data:/root/.ollama
+    networks:
+      - classification
     restart: always
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -34,6 +36,8 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ollama_data:/root/.ollama
+    networks:
+      - classification
     entrypoint: ["/bin/sh", "-c", "ollama pull qwen2.5:3b"]
     restart: "no"
 
@@ -50,21 +54,26 @@ services:
       - OLLAMA_HOST=http://ollama:11434
       - API_BEARER_TOKEN=${API_BEARER_TOKEN}
       - PREDICT_CACHE_SIZE=512
-      - OLLAMA_MAX_WORKERS=4
     ports:
       - "80:8003"
+    networks:
+      - classification
     restart: always
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:8003/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 15s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     logging:
       driver: json-file
       options:
         max-size: "50m"
         max-file: "3"
+
+networks:
+  classification:
+    driver: bridge
 
 volumes:
   ollama_data:

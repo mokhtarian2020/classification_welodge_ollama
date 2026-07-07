@@ -17,12 +17,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Startup script: wait for Ollama before accepting requests
+RUN chmod +x app_entrypoint.sh
+
 # Expose FastAPI port
 EXPOSE 8003
 
-# Health check — hits the FastAPI root every 30s
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+# Health check — verifies API + Ollama model availability
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=5 \
     CMD curl -f http://localhost:8003/health || exit 1
 
-# Start FastAPI app using Uvicorn
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8003"]
+# Start via entrypoint (waits for Ollama, then uvicorn)
+CMD ["./app_entrypoint.sh"]
