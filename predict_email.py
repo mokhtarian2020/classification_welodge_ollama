@@ -1,10 +1,8 @@
 import json
 import math
 import os
-import re
 import urllib.error
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
 
 import tiktoken
@@ -15,49 +13,56 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 CHUNK_SIZE_TOKENS = 1800
 MAX_TOTAL_TOKENS = 2048
 TOKEN_BUFFER = 200
-SCORE_SMOOTHING = 2.0
-SCORE_PRIOR = 0.02
-SCORE_PRIOR_ALTRO = 0.002
-ALTRO_KEY = "Altro"
 PREDICT_CACHE_SIZE = int(os.environ.get("PREDICT_CACHE_SIZE", "512"))
-OLLAMA_RATING_NUM_CTX = 2048
-OLLAMA_MAX_WORKERS = int(os.environ.get("OLLAMA_MAX_WORKERS", "4"))
+OLLAMA_NUM_CTX = 2048
+
+ALTRO_KEY = "Altro"
 
 CATEGORIES = [
     {
         "key": "Istruzione, formazione e inclusione socio-lavorativa (ambito tematico 01)",
         "description": (
-            "istruzione, formazione professionale, inclusione scolastica, rapporti con il sistema "
-            "educativo e con i datori di lavoro, inclusione lavorativa delle persone con disabilità"
+            "scuola, PEI, PDP, insegnante di sostegno, inclusione scolastica, formazione professionale, "
+            "ricerca lavoro, tirocini, borse lavoro, collocamento mirato, inserimento lavorativo, "
+            "licenziamento, discriminazione sul lavoro, permessi legge 104, rapporti con datori di lavoro"
         ),
     },
     {
         "key": "Servizi sociosanitari, progetto di vita e assistenza (ambito tematico 02)",
         "description": (
-            "strutture sociosanitarie, progetto di vita individuale, assistenza domiciliare "
-            "e servizi di supporto alla persona"
+            "RSA, centri diurni, comunità alloggio, strutture residenziali, assistenza domiciliare ADI, "
+            "ausili sanitari, cure mediche, invalidità civile, progetto di vita individuale, "
+            "servizi di supporto alla persona"
         ),
     },
     {
         "key": "Accessibilità, mobilità e tecnologie inclusive (ambito tematico 03)",
         "description": (
-            "accessibilità fisica e digitale, eliminazione delle barriere architettoniche, "
-            "mobilità e trasporti, accessibilità dei media e dei servizi digitali"
+            "rampe, ascensori, barriere architettoniche, parcheggi disabili, bus, treni, trasporto "
+            "pubblico, mobilità, siti web inaccessibili, barriere digitali, accessibilità dei media "
+            "e dei servizi digitali"
         ),
     },
     {
         "key": "Partecipazione sociale, culturale, ricreativa e sportiva (ambito tematico 04)",
         "description": (
-            "attività sociali, culturali, ricreative e sportive; eventi e manifestazioni pubbliche "
-            "e private; associazionismo; turismo accessibile; accesso e fruizione di servizi "
-            "e iniziative aperti al pubblico"
+            "teatro, cinema, musei, eventi culturali, sport, palestre, corsi ricreativi, vacanze, "
+            "turismo accessibile, associazionismo, feste e manifestazioni pubbliche, esclusione "
+            "dalla vita sociale e ricreativa"
         ),
     },
-    {
-        "key": ALTRO_KEY,
-        "description": "solo segnalazioni generiche, richieste di orientamento o casi davvero non classificabili",
-    },
 ]
+
+# The model answers with a single digit: 1-4 = thematic area, 0 = Altro.
+DIGIT_TO_KEY = {"0": ALTRO_KEY}
+DIGIT_TO_KEY.update({str(i + 1): category["key"] for i, category in enumerate(CATEGORIES)})
+
+ALL_CATEGORY_KEYS = [category["key"] for category in CATEGORIES] + [ALTRO_KEY]
+
+CATEGORY_OPTIONS = "\n".join(
+    f"{i + 1} = {category['key']}: {category['description']}"
+    for i, category in enumerate(CATEGORIES)
+)
 
 ENCODING = tiktoken.get_encoding("cl100k_base")
 
@@ -111,45 +116,48 @@ def _ollama_chat(payload):
         raise RuntimeError(f"Errore API Ollama: {exc}") from exc
 
 
-def _parse_digit_rating(logprob_entry):
+def _uniform_probabilities():
+    return {key: 1.0 / len(ALL_CATEGORY_KEYS) for key in ALL_CATEGORY_KEYS}
+
+
+def _digit_probabilities(logprob_entry):
+    """Turn the logprobs of the answer digit into a probability per category."""
     digit_logprobs = {}
 
     for item in [logprob_entry] + logprob_entry.get("top_logprobs", []):
         token = item.get("token", "").strip()
-        if re.fullmatch(r"[0-9]", token):
+        if token in DIGIT_TO_KEY:
             digit_logprobs[token] = max(
                 digit_logprobs.get(token, float("-inf")),
                 item.get("logprob", float("-inf")),
             )
 
     if not digit_logprobs:
-        return 0.0
+        return None
 
     max_logprob = max(digit_logprobs.values())
-    weighted_sum = sum(
-        int(digit) * math.exp(logprob - max_logprob)
+    weights = {
+        digit: math.exp(logprob - max_logprob)
         for digit, logprob in digit_logprobs.items()
-    )
-    total = sum(math.exp(logprob - max_logprob) for logprob in digit_logprobs.values())
-    return weighted_sum / total
+    }
+    total = sum(weights.values())
+
+    probabilities = {key: 0.0 for key in ALL_CATEGORY_KEYS}
+    for digit, weight in weights.items():
+        probabilities[DIGIT_TO_KEY[digit]] = weight / total
+
+    return probabilities
 
 
-def _category_rating(category, text):
-    extra = ""
-    if category["key"] == ALTRO_KEY:
-        extra = (
-            " Usa 9 SOLO se il testo non riguarda in alcun modo scuola, lavoro, salute, "
-            "strutture, accessibilità, mobilità, vita sociale o eventi. "
-            "Se anche solo parzialmente pertinente a un ambito tematico, rispondi 0."
-        )
-
+def _classify_text(text):
     prompt = (
-        f"Sei un classificatore di segnalazioni per persone con disabilità.\n"
-        f"Valuta la pertinenza del testo alla categoria (0=per nulla pertinente, 9=massima pertinenza).\n"
-        f"Categoria: {category['key']}\n"
-        f"Definizione: {category['description']}{extra}\n"
+        "Sei un classificatore di segnalazioni per persone con disabilità.\n"
+        "Scegli la categoria che descrive meglio il testo.\n"
+        f"{CATEGORY_OPTIONS}\n"
+        "0 = Altro: saluti, richieste generiche di informazioni, test, "
+        "testi senza una segnalazione specifica o non attribuibili alle categorie sopra\n"
         f"Testo: {text}\n"
-        f"Rispondi SOLO con un numero intero da 0 a 9."
+        "Rispondi SOLO con il numero della categoria (0, 1, 2, 3 o 4)."
     )
 
     response = _ollama_chat(
@@ -159,57 +167,32 @@ def _category_rating(category, text):
             "logprobs": True,
             "top_logprobs": 20,
             "messages": [
-                {"role": "system", "content": "Rispondi solo con un numero intero da 0 a 9."},
+                {"role": "system", "content": "Rispondi solo con un numero: 0, 1, 2, 3 o 4."},
                 {"role": "user", "content": prompt},
             ],
             "options": {
                 "temperature": 0,
                 "num_predict": 1,
-                "num_ctx": OLLAMA_RATING_NUM_CTX,
+                "num_ctx": OLLAMA_NUM_CTX,
             },
         }
     )
 
     logprob_entries = response.get("logprobs") or []
     if not logprob_entries:
-        return category["key"], 0.0
+        return _uniform_probabilities()
 
-    return category["key"], _parse_digit_rating(logprob_entries[0])
-
-
-def _ratings_for_text(text):
-    ratings = {}
-    max_workers = min(OLLAMA_MAX_WORKERS, len(CATEGORIES))
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_category_rating, category, text) for category in CATEGORIES]
-        for future in as_completed(futures):
-            key, rating = future.result()
-            ratings[key] = rating
-
-    return ratings
+    probabilities = _digit_probabilities(logprob_entries[0])
+    return probabilities if probabilities is not None else _uniform_probabilities()
 
 
-def _category_prior(key):
-    return SCORE_PRIOR_ALTRO if key == ALTRO_KEY else SCORE_PRIOR
+def _merge_probability_maps(probability_maps):
+    merged = {key: 0.0 for key in ALL_CATEGORY_KEYS}
+    for probability_map in probability_maps:
+        for key, probability in probability_map.items():
+            merged[key] += probability
 
-
-def _ratings_to_probabilities(ratings):
-    weights = {
-        key: math.exp(rating / SCORE_SMOOTHING) + _category_prior(key)
-        for key, rating in ratings.items()
-    }
-    total = sum(weights.values()) or 1.0
-    return {key: weight / total for key, weight in weights.items()}
-
-
-def _merge_rating_maps(rating_maps):
-    merged = {category["key"]: 0.0 for category in CATEGORIES}
-    for rating_map in rating_maps:
-        for key, rating in rating_map.items():
-            merged[key] += rating
-
-    count = len(rating_maps) or 1
+    count = len(probability_maps) or 1
     return {key: value / count for key, value in merged.items()}
 
 
@@ -224,13 +207,11 @@ def build_scores_response(probabilities):
 
 def _predict_uncached(full_text):
     if count_tokens(full_text) <= (MAX_TOTAL_TOKENS - TOKEN_BUFFER):
-        ratings = _ratings_for_text(full_text)
+        probabilities = _classify_text(full_text)
     else:
         chunks = split_into_chunks(full_text)
-        chunk_ratings = [_ratings_for_text(chunk) for chunk in chunks]
-        ratings = _merge_rating_maps(chunk_ratings)
+        probabilities = _merge_probability_maps([_classify_text(chunk) for chunk in chunks])
 
-    probabilities = _ratings_to_probabilities(ratings)
     return build_scores_response(probabilities)
 
 
@@ -242,8 +223,7 @@ def _predict_cached(full_text):
 def predict(request_json):
     full_text = extract_input(request_json)
     if not full_text:
-        probabilities = {category["key"]: 1.0 / len(CATEGORIES) for category in CATEGORIES}
-        return build_scores_response(probabilities)
+        return build_scores_response(_uniform_probabilities())
 
     cached = _predict_cached(full_text)
     return {

@@ -102,6 +102,6 @@ curl https://ceia.gesan.it/health
 
 ## Tempi di risposta
 
-I tempi di risposta tipici sono **~15–25 secondi** per richiesta (il modello valuta tutte e 5 le categorie in parallelo). Solo la prima richiesta dopo un riavvio del servizio può richiedere più tempo per il caricamento iniziale del modello in memoria.
+I tempi di risposta tipici sono **~2–5 secondi** per richiesta. Solo la prima richiesta dopo un riavvio del servizio può richiedere più tempo per il caricamento iniziale del modello in memoria.
 
-La macchina virtuale esegue il modello **solo su CPU**. Con una **GPU dedicata**, i tempi scenderebbero a **meno di 1 secondo** per le stesse richieste.
+La macchina virtuale esegue il modello **solo su CPU**. Con una **GPU dedicata**, i tempi scenderebbero ulteriormente a **meno di 1 secondo**.
